@@ -1,0 +1,8 @@
+CONFIG_IDF_TARGET="esp32c3"
+
+# GPIO20/21 (UART0) son DIR/PWM del motor izquierdo: la consola va por USB Serial/JTAG
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Tick de 1 ms para que vTaskDelayUntil pueda dar Ts de 1-2 ms
+CONFIG_FREERTOS_HZ=1000
