@@ -19,9 +19,9 @@
 #define ESCALA_BATERIA  0.667f
 #define VEL_TOPE        180
 
-#define VEL_MAXIMA      110
-#define VEL_MINIMA      55
-#define VEL_BUSQUEDA    55
+#define VEL_MAXIMA      80
+#define VEL_MINIMA      45
+#define VEL_BUSQUEDA    45
 #define KP              0.265f
 #define KD              7.5f
 #define K_FRENO         0.08f
@@ -29,6 +29,7 @@
 #define LIMITE_PEND     0.015f
 #define LIMITE_MAX      90
 #define UMBRAL_LINEA    500
+#define SENSOR_OMITIDO  10
 #define BIF_DETECTADOS  4
 #define BIF_HUECO       4
 #define T_PERDIDA_MS    150
@@ -37,7 +38,7 @@
 
 #define TURBINA_APAGADA_US  1000
 #define TURBINA_US_MAX      2000
-#define TURBINA_US_CARRERA  1200
+#define TURBINA_US_CARRERA  1000
 #define T_TURBINA_SUBE_MS   500
 
 #define IR_COMANDO      0x45
@@ -59,6 +60,7 @@ void turbina(uint16_t us);
 void sensores_init(void);
 void calibrar(void);
 int leerSensores(void);
+void probar_sensores(void);
 
 void ir_init(void);
 bool ir_start(void);

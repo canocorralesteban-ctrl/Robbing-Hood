@@ -120,7 +120,7 @@ static void hardware_motores(int izq, int der)
 
 void moverRobot(int vel_izq, int vel_der)
 {
-    hardware_motores(-vel_izq, vel_der);
+    hardware_motores(vel_izq, -vel_der);
 }
 
 void turbina_init(void)
@@ -209,6 +209,11 @@ int leerSensores(void)
     for (int i = 0; i < 16; i++) {
         int raw = leer_canal(i);
 
+        if (i == SENSOR_OMITIDO) {
+            s_norm[i] = 0;
+            continue;
+        }
+
         int val = 0;
         if (s_max[i] > s_min[i])
             val = (raw - s_min[i]) * 1000 / (s_max[i] - s_min[i]);
@@ -267,6 +272,22 @@ int leerSensores(void)
     else
         moverRobot(-VEL_BUSQUEDA, VEL_BUSQUEDA);
     return 0;
+}
+
+void probar_sensores(void)
+{
+    while (1) {
+        int raw[16];
+        for (int i = 0; i < 16; i++)
+            raw[i] = leer_canal(i);
+        for (int i = 0; i < 16; i++)
+            printf("%5d", raw[i]);
+        printf("  |  ");
+        for (int i = 0; i < 16; i++)
+            printf("%d", raw[i] > 2048);
+        printf("\n");
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 
 static bool al_recibir_ir(rmt_channel_handle_t canal, const rmt_rx_done_event_data_t *datos, void *contexto)
