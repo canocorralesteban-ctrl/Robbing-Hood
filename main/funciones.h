@@ -17,14 +17,16 @@
 #define PIN_IR          10
 
 #define ESCALA_BATERIA  0.667f
-#define VEL_TOPE        180
 
-#define VEL_MAXIMA      160
-#define VEL_MINIMA      110
-#define VEL_BUSQUEDA    80
-#define KP              0.265f
-#define KD              7.5f
-#define K_FRENO         0.065f
+#define VEL_MAXIMA      220
+#define VEL_MINIMA      180
+#define VEL_BUSQUEDA    90
+#define KP              0.07f
+#define KD              3.0f
+#define ALFA_D          0.7f
+#define K_FRENO         0.25f
+#define ACELERACION     0.5f
+#define FRENADO         2.0f
 #define LIMITE_BASE     45
 #define LIMITE_PEND     0.015f
 #define LIMITE_MAX      90
@@ -41,11 +43,15 @@
 #define TURBINA_APAGADA_US  1000
 #define TURBINA_US_MAX      2000
 #define TURBINA_US_ARRANQUE 1200
-#define TURBINA_US_RECTA    1500
-#define TURBINA_US_CURVA    1500
+#define TURBINA_US_RECTA    1800
+#define TURBINA_US_CURVA    1800
 #define TURBINA_ERROR_CURVA 3000.0f
-#define TURBINA_PASO_US     1.0f
+#define TURBINA_SUBE_US     0.5f
+#define TURBINA_BAJA_US     0.1f
 #define T_TURBINA_ARRANQUE_MS 1000
+
+#define TAREA_CONTROL_PILA      4096
+#define TAREA_CONTROL_PRIORIDAD 5
 
 #define IR_BOTON_MOTORES 0x45
 #define IR_BOTON_TURBINA 0x46
@@ -54,6 +60,8 @@
 
 extern float posicion_actual;
 extern uint32_t tiempo_sin_linea;
+extern bool turbina_encendida;
+extern uint32_t t_turbina;
 
 uint32_t millis(void);
 int limitar(int valor, int minimo, int maximo);
@@ -64,6 +72,7 @@ void moverRobot(int vel_izq, int vel_der);
 
 void turbina_init(void);
 void turbina(uint16_t us);
+void actualizar_turbina(float error);
 
 void sensores_init(void);
 void calibrar_auto(void);

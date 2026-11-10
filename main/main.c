@@ -7,20 +7,13 @@
 #include "funciones.h"
 
 bool robot_encendido = false;
-bool turbina_encendida = false;
-uint32_t t_turbina = 0;
-float turbina_us = TURBINA_APAGADA_US;
 float error = 0;
 float error_anterior = 0;
+float derivada = 0;
+float vel = VEL_MINIMA;
 
-void app_main(void)
+static void tarea_control(void *parametro)
 {
-    motores_init();
-    turbina_init();
-    moverRobot(0, 0);
-    sensores_init();
-    ir_init();
-
     TickType_t ultimo_ciclo = xTaskGetTickCount();
 
     while (1) {
@@ -31,11 +24,12 @@ void app_main(void)
             robot_encendido = !robot_encendido;
             error = 0;
             error_anterior = 0;
+            derivada = 0;
+            vel = VEL_MINIMA;
             tiempo_sin_linea = millis();
         }
         if (boton == IR_BOTON_TURBINA) {
             turbina_encendida = !turbina_encendida;
-            turbina_us = TURBINA_US_ARRANQUE;
             t_turbina = millis();
         }
         if (boton == IR_BOTON_CALIBRAR) {
@@ -45,16 +39,7 @@ void app_main(void)
             ultimo_ciclo = xTaskGetTickCount();
         }
 
-        if (!turbina_encendida) {
-            turbina(TURBINA_APAGADA_US);
-        } else if (millis() - t_turbina < T_TURBINA_ARRANQUE_MS) {
-            turbina(TURBINA_US_ARRANQUE);
-        } else {
-            float curva = limitar_f(fabsf(error) / TURBINA_ERROR_CURVA, 0, 1);
-            float objetivo = TURBINA_US_RECTA + (TURBINA_US_CURVA - TURBINA_US_RECTA) * curva;
-            turbina_us += limitar_f(objetivo - turbina_us, -TURBINA_PASO_US, TURBINA_PASO_US);
-            turbina(turbina_us);
-        }
+        actualizar_turbina(error);
 
         if (!robot_encendido) {
             moverRobot(0, 0);
@@ -65,9 +50,8 @@ void app_main(void)
 
         error = -posicion_actual;
 
-        float P = error * KP;
-        float D = (error - error_anterior) * KD;
-        float correccion = P + D;
+        derivada += ALFA_D * ((error - error_anterior) - derivada);
+        float correccion = error * KP + derivada * KD;
 
         float limite = LIMITE_BASE + fabsf(error) * LIMITE_PEND;
         if (limite > LIMITE_MAX) limite = LIMITE_MAX;
@@ -75,15 +59,23 @@ void app_main(void)
 
         error_anterior = error;
 
-        int vel = VEL_MAXIMA - fabsf(error) * K_FRENO;
-        vel = limitar(vel, VEL_MINIMA, VEL_MAXIMA);
+        float vel_objetivo = limitar_f(VEL_MAXIMA - fabsf(error) * K_FRENO, VEL_MINIMA, VEL_MAXIMA);
+        vel += limitar_f(vel_objetivo - vel, -FRENADO, ACELERACION);
 
-        int vel_izq = vel - correccion;
-        int vel_der = vel + correccion;
-
-        vel_izq = limitar(vel_izq, -20, VEL_MAXIMA);
-        vel_der = limitar(vel_der, -20, VEL_MAXIMA);
+        int vel_izq = limitar(vel - correccion, -20, VEL_MAXIMA);
+        int vel_der = limitar(vel + correccion, -20, VEL_MAXIMA);
 
         moverRobot(vel_izq, vel_der);
     }
+}
+
+void app_main(void)
+{
+    motores_init();
+    turbina_init();
+    moverRobot(0, 0);
+    sensores_init();
+    ir_init();
+
+    xTaskCreate(tarea_control, "control", TAREA_CONTROL_PILA, NULL, TAREA_CONTROL_PRIORIDAD, NULL);
 }

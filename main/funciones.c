@@ -1,6 +1,8 @@
 #include "funciones.h"
 
+#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -20,6 +22,10 @@ static int s_norm[16];
 float posicion_actual = 0;
 static float ultima_posicion = 0;
 uint32_t tiempo_sin_linea = 0;
+
+bool turbina_encendida = false;
+uint32_t t_turbina = 0;
+static float turbina_us = TURBINA_APAGADA_US;
 
 static adc_oneshot_unit_handle_t adc;
 
@@ -93,29 +99,18 @@ void motores_init(void)
 
 static void poner_pwm(ledc_channel_t canal, int vel)
 {
-    vel = limitar(vel, 0, VEL_TOPE);
-    uint32_t duty = (uint32_t)(vel * ESCALA_BATERIA);
+    uint32_t duty = limitar(vel * ESCALA_BATERIA, 0, 255);
     ledc_set_duty(LEDC_LOW_SPEED_MODE, canal, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, canal);
 }
 
 static void hardware_motores(int izq, int der)
 {
-    if (izq >= 0)
-        gpio_set_level(PIN_DIR_IZQ, 1);
-    else {
-        gpio_set_level(PIN_DIR_IZQ, 0);
-        izq = -izq;
-    }
-    poner_pwm(LEDC_CHANNEL_0, izq);
+    gpio_set_level(PIN_DIR_IZQ, izq >= 0);
+    poner_pwm(LEDC_CHANNEL_0, abs(izq));
 
-    if (der >= 0)
-        gpio_set_level(PIN_DIR_DER, 1);
-    else {
-        gpio_set_level(PIN_DIR_DER, 0);
-        der = -der;
-    }
-    poner_pwm(LEDC_CHANNEL_1, der);
+    gpio_set_level(PIN_DIR_DER, der >= 0);
+    poner_pwm(LEDC_CHANNEL_1, abs(der));
 }
 
 void moverRobot(int vel_izq, int vel_der)
@@ -142,6 +137,23 @@ void turbina(uint16_t us)
     us = limitar(us, TURBINA_APAGADA_US, TURBINA_US_MAX);
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, us * 16384 / 20000);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2);
+}
+
+void actualizar_turbina(float error)
+{
+    if (!turbina_encendida) {
+        turbina(TURBINA_APAGADA_US);
+        return;
+    }
+    if (millis() - t_turbina < T_TURBINA_ARRANQUE_MS) {
+        turbina_us = TURBINA_US_ARRANQUE;
+        turbina(TURBINA_US_ARRANQUE);
+        return;
+    }
+    float curva = limitar_f(fabsf(error) / TURBINA_ERROR_CURVA, 0, 1);
+    float objetivo = TURBINA_US_RECTA + (TURBINA_US_CURVA - TURBINA_US_RECTA) * curva;
+    turbina_us += limitar_f(objetivo - turbina_us, -TURBINA_BAJA_US, TURBINA_SUBE_US);
+    turbina(turbina_us);
 }
 
 void sensores_init(void)
@@ -243,8 +255,8 @@ int leerSensores(void)
             ultimo_activo = i;
 
             int peso = (int)((i - 7.5f) * 1000);
-            suma_p += peso * val;
-            suma += val;
+            suma_p += peso * (val - UMBRAL_LINEA);
+            suma += val - UMBRAL_LINEA;
             detectados++;
         }
     }
@@ -258,8 +270,8 @@ int leerSensores(void)
             if (ultima_posicion > 0 && i < 8) continue;
 
             int peso = (int)((i - 7.5f) * 1000);
-            suma_p += peso * s_norm[i];
-            suma += s_norm[i];
+            suma_p += peso * (s_norm[i] - UMBRAL_LINEA);
+            suma += s_norm[i] - UMBRAL_LINEA;
         }
         if (suma == 0) {
             posicion_actual = ultima_posicion;
@@ -282,10 +294,11 @@ int leerSensores(void)
         posicion_actual = ultima_posicion;
         return 1;
     }
-    if (ultima_posicion > 0)
+    if (ultima_posicion > 0) {
         moverRobot(VEL_BUSQUEDA, -VEL_BUSQUEDA);
-    else
-        moverRobot(-VEL_BUSQUEDA, VEL_BUSQUEDA);
+        return 0;
+    }
+    moverRobot(-VEL_BUSQUEDA, VEL_BUSQUEDA);
     return 0;
 }
 
@@ -357,9 +370,11 @@ static bool decodificar_nec(size_t cantidad)
     uint32_t trama = 0;
     for (int bit = 0; bit < 32; bit++) {
         int alto_us = simbolos[bit + 1].duration1;
-        if (cerca(alto_us, 1690))
+        if (cerca(alto_us, 1690)) {
             trama |= (1UL << bit);
-        else if (!cerca(alto_us, 560))
+            continue;
+        }
+        if (!cerca(alto_us, 560))
             return false;
     }
     codigo_ir = trama;
