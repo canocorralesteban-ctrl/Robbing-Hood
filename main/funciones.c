@@ -178,16 +178,18 @@ static int leer_canal(int canal)
     return lectura;
 }
 
-void calibrar(void)
+static void reiniciar_calibracion(void)
 {
     for (int i = 0; i < 16; i++) {
         s_min[i] = 4095;
         s_max[i] = 0;
     }
+}
 
-    printf("CALIBRANDO...\n");
+static void muestrear(uint32_t ms)
+{
     uint32_t t0 = millis();
-    while (millis() - t0 < T_CALIBRAR_MS) {
+    while (millis() - t0 < ms) {
         for (int i = 0; i < 16; i++) {
             int lectura = leer_canal(i);
             if (lectura < s_min[i]) s_min[i] = lectura;
@@ -195,6 +197,19 @@ void calibrar(void)
         }
         vTaskDelay(1);
     }
+}
+
+void calibrar_auto(void)
+{
+    reiniciar_calibracion();
+    printf("CALIBRANDO AUTO...\n");
+    moverRobot(-VEL_CALIBRAR, VEL_CALIBRAR);
+    muestrear(T_CALIBRAR_GIRO_MS);
+    moverRobot(VEL_CALIBRAR, -VEL_CALIBRAR);
+    muestrear(2 * T_CALIBRAR_GIRO_MS);
+    moverRobot(-VEL_CALIBRAR, VEL_CALIBRAR);
+    muestrear(T_CALIBRAR_GIRO_MS + T_CALIBRAR_EXTRA_MS);
+    moverRobot(0, 0);
     printf("LISTO\n");
 }
 
@@ -351,25 +366,23 @@ static bool decodificar_nec(size_t cantidad)
     return true;
 }
 
-bool ir_start(void)
+int ir_boton(void)
 {
     size_t cantidad = 0;
     if (xQueueReceive(cola_ir, &cantidad, 0) != pdTRUE)
-        return false;
+        return -1;
 
     bool trama_valida = decodificar_nec(cantidad);
     escuchar_ir();
     if (!trama_valida)
-        return false;
+        return -1;
 
     uint8_t direccion = codigo_ir & 0xFF;
     uint8_t comando = (codigo_ir >> 16) & 0xFF;
     printf("IR: direccion=0x%02X comando=0x%02X\n", direccion, comando);
 
-    if (comando != IR_COMANDO)
-        return false;
     if (millis() - ultimo_ir < T_ANTIRREBOTE_MS)
-        return false;
+        return -1;
     ultimo_ir = millis();
-    return true;
+    return comando;
 }

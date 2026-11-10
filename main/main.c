@@ -7,38 +7,53 @@
 #include "funciones.h"
 
 bool robot_encendido = false;
+bool turbina_encendida = false;
+uint32_t t_turbina = 0;
+float turbina_us = TURBINA_APAGADA_US;
 float error = 0;
 float error_anterior = 0;
 
 void app_main(void)
 {
-    turbina_init();
     motores_init();
+    turbina_init();
     moverRobot(0, 0);
     sensores_init();
     ir_init();
-
-    calibrar();
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    ir_start();
 
     TickType_t ultimo_ciclo = xTaskGetTickCount();
 
     while (1) {
         vTaskDelayUntil(&ultimo_ciclo, pdMS_TO_TICKS(TS_MS));
 
-        if (ir_start()) {
+        int boton = ir_boton();
+        if (boton == IR_BOTON_MOTORES) {
             robot_encendido = !robot_encendido;
+            error = 0;
+            error_anterior = 0;
+            tiempo_sin_linea = millis();
+        }
+        if (boton == IR_BOTON_TURBINA) {
+            turbina_encendida = !turbina_encendida;
+            turbina_us = TURBINA_US_ARRANQUE;
+            t_turbina = millis();
+        }
+        if (boton == IR_BOTON_CALIBRAR) {
+            robot_encendido = false;
+            calibrar_auto();
+            ir_boton();
+            ultimo_ciclo = xTaskGetTickCount();
+        }
 
-            if (robot_encendido) {
-                turbina(TURBINA_US_CARRERA);
-                vTaskDelay(pdMS_TO_TICKS(T_TURBINA_SUBE_MS));
-                ultimo_ciclo = xTaskGetTickCount();
-                error_anterior = 0;
-                tiempo_sin_linea = millis();
-            }
-            else
-                turbina(TURBINA_APAGADA_US);
+        if (!turbina_encendida) {
+            turbina(TURBINA_APAGADA_US);
+        } else if (millis() - t_turbina < T_TURBINA_ARRANQUE_MS) {
+            turbina(TURBINA_US_ARRANQUE);
+        } else {
+            float curva = limitar_f(fabsf(error) / TURBINA_ERROR_CURVA, 0, 1);
+            float objetivo = TURBINA_US_RECTA + (TURBINA_US_CURVA - TURBINA_US_RECTA) * curva;
+            turbina_us += limitar_f(objetivo - turbina_us, -TURBINA_PASO_US, TURBINA_PASO_US);
+            turbina(turbina_us);
         }
 
         if (!robot_encendido) {

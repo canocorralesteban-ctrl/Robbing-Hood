@@ -19,12 +19,12 @@
 #define ESCALA_BATERIA  0.667f
 #define VEL_TOPE        180
 
-#define VEL_MAXIMA      80
-#define VEL_MINIMA      45
-#define VEL_BUSQUEDA    45
+#define VEL_MAXIMA      160
+#define VEL_MINIMA      110
+#define VEL_BUSQUEDA    80
 #define KP              0.265f
 #define KD              7.5f
-#define K_FRENO         0.08f
+#define K_FRENO         0.065f
 #define LIMITE_BASE     45
 #define LIMITE_PEND     0.015f
 #define LIMITE_MAX      90
@@ -33,15 +33,23 @@
 #define BIF_DETECTADOS  4
 #define BIF_HUECO       4
 #define T_PERDIDA_MS    150
-#define T_CALIBRAR_MS   5000
+#define VEL_CALIBRAR    60
+#define T_CALIBRAR_GIRO_MS 300
+#define T_CALIBRAR_EXTRA_MS 40
 #define TS_MS           2
 
 #define TURBINA_APAGADA_US  1000
 #define TURBINA_US_MAX      2000
-#define TURBINA_US_CARRERA  1000
-#define T_TURBINA_SUBE_MS   500
+#define TURBINA_US_ARRANQUE 1200
+#define TURBINA_US_RECTA    1500
+#define TURBINA_US_CURVA    1500
+#define TURBINA_ERROR_CURVA 3000.0f
+#define TURBINA_PASO_US     1.0f
+#define T_TURBINA_ARRANQUE_MS 1000
 
-#define IR_COMANDO      0x45
+#define IR_BOTON_MOTORES 0x45
+#define IR_BOTON_TURBINA 0x46
+#define IR_BOTON_CALIBRAR 0x47
 #define T_ANTIRREBOTE_MS 500
 
 extern float posicion_actual;
@@ -58,11 +66,11 @@ void turbina_init(void);
 void turbina(uint16_t us);
 
 void sensores_init(void);
-void calibrar(void);
+void calibrar_auto(void);
 int leerSensores(void);
 void probar_sensores(void);
 
 void ir_init(void);
-bool ir_start(void);
+int ir_boton(void);
 
 #endif

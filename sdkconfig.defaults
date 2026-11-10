@@ -6,3 +6,7 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 
 # Tick de 1 ms para que vTaskDelayUntil pueda dar Ts de 1-2 ms
 CONFIG_FREERTOS_HZ=1000
+
+# Arranque rápido: menos tiempo con GPIO21 (PWM izquierdo) en alto antes de app_main
+CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
+CONFIG_BOOTLOADER_SKIP_VALIDATE_ON_POWER_ON=y
