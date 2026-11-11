@@ -17,15 +17,20 @@
 
 static int s_min[16];
 static int s_max[16];
-static int s_norm[16];
+static int umbral[16];
+bool calibrado = false;
 
-float posicion_actual = 0;
-static float ultima_posicion = 0;
-uint32_t tiempo_sin_linea = 0;
+bool linea_perdida = false;
+uint32_t t_go = 0;
+static uint32_t t_linea = 0;
+static int pos_filtrada = SETPOINT;
+static float last_prop = 0;
+static float derivada_filtrada = 0;
+static int vel_base = VEL_CURVA;
 
 bool turbina_encendida = false;
-uint32_t t_turbina = 0;
-static float turbina_us = TURBINA_APAGADA_US;
+static uint32_t t_turbina = 0;
+static int turbina_us = TURBINA_APAGADA_US;
 
 static adc_oneshot_unit_handle_t adc;
 
@@ -56,6 +61,11 @@ float limitar_f(float valor, float minimo, float maximo)
     if (valor > maximo)
         return maximo;
     return valor;
+}
+
+static int escalar(float x, float de_min, float de_max, int a_min, int a_max)
+{
+    return a_min + (x - de_min) * (a_max - a_min) / (de_max - de_min);
 }
 
 static void salida(int pin)
@@ -118,6 +128,16 @@ void moverRobot(int vel_izq, int vel_der)
     hardware_motores(vel_izq, -vel_der);
 }
 
+void detenerMotores(void)
+{
+    moverRobot(0, 0);
+    vel_base = VEL_CURVA;
+    last_prop = 0;
+    derivada_filtrada = 0;
+    t_go = millis();
+    t_linea = millis();
+}
+
 void turbina_init(void)
 {
     ledc_timer_config_t timer = {
@@ -139,21 +159,24 @@ void turbina(uint16_t us)
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2);
 }
 
-void actualizar_turbina(float error)
+void turbina_encender(bool encender)
+{
+    turbina_encendida = encender;
+    turbina_us = TURBINA_US_ARRANQUE;
+    t_turbina = millis();
+}
+
+void actualizar_turbina(void)
 {
     if (!turbina_encendida) {
         turbina(TURBINA_APAGADA_US);
         return;
     }
-    if (millis() - t_turbina < T_TURBINA_ARRANQUE_MS) {
-        turbina_us = TURBINA_US_ARRANQUE;
-        turbina(TURBINA_US_ARRANQUE);
-        return;
-    }
-    float curva = limitar_f(fabsf(error) / TURBINA_ERROR_CURVA, 0, 1);
-    float objetivo = TURBINA_US_RECTA + (TURBINA_US_CURVA - TURBINA_US_RECTA) * curva;
-    turbina_us += limitar_f(objetivo - turbina_us, -TURBINA_BAJA_US, TURBINA_SUBE_US);
     turbina(turbina_us);
+    if (turbina_us >= TURBINA_US_POTENCIA) return;
+    if (millis() - t_turbina < T_TURBINA_PASO_MS) return;
+    t_turbina = millis();
+    turbina_us = limitar(turbina_us + TURBINA_PASO_US, 0, TURBINA_US_POTENCIA);
 }
 
 void sensores_init(void)
@@ -222,84 +245,107 @@ void calibrar_auto(void)
     moverRobot(-VEL_CALIBRAR, VEL_CALIBRAR);
     muestrear(T_CALIBRAR_GIRO_MS + T_CALIBRAR_EXTRA_MS);
     moverRobot(0, 0);
+    for (int i = 0; i < 16; i++) {
+        umbral[i] = (s_min[i] + s_max[i]) / 2;
+        printf("%d: min %d max %d umbral %d\n", i, s_min[i], s_max[i], umbral[i]);
+    }
+    calibrado = true;
     printf("LISTO\n");
 }
 
-int leerSensores(void)
+void lecturaLinea(void)
 {
-    int suma_p = 0;
+    int sumap = 0;
     int suma = 0;
-    int detectados = 0;
-    int ultimo_activo = -1;
-    int gap_max = 0;
 
     for (int i = 0; i < 16; i++) {
-        int raw = leer_canal(i);
-
-        if (i == SENSOR_OMITIDO) {
-            s_norm[i] = 0;
-            continue;
-        }
-
-        int val = 0;
-        if (s_max[i] > s_min[i])
-            val = (raw - s_min[i]) * 1000 / (s_max[i] - s_min[i]);
-        val = limitar(val, 0, 1000);
-        s_norm[i] = val;
-
-        if (val > UMBRAL_LINEA) {
-            if (ultimo_activo >= 0) {
-                int gap = i - ultimo_activo;
-                if (gap > gap_max) gap_max = gap;
-            }
-            ultimo_activo = i;
-
-            int peso = (int)((i - 7.5f) * 1000);
-            suma_p += peso * (val - UMBRAL_LINEA);
-            suma += val - UMBRAL_LINEA;
-            detectados++;
-        }
+        int activo = leer_canal(i) > umbral[i] && i != SENSOR_OMITIDO;
+        sumap += activo * (15 - i) * 100;
+        suma += activo;
     }
 
-    if (detectados >= BIF_DETECTADOS && gap_max >= BIF_HUECO) {
-        suma_p = 0;
-        suma = 0;
-        for (int i = 0; i < 16; i++) {
-            if (s_norm[i] <= UMBRAL_LINEA) continue;
-            if (ultima_posicion <= 0 && i >= 8) continue;
-            if (ultima_posicion > 0 && i < 8) continue;
-
-            int peso = (int)((i - 7.5f) * 1000);
-            suma_p += peso * (s_norm[i] - UMBRAL_LINEA);
-            suma += s_norm[i] - UMBRAL_LINEA;
-        }
-        if (suma == 0) {
-            posicion_actual = ultima_posicion;
-            return 1;
-        }
-        posicion_actual = suma_p / suma;
-        ultima_posicion = posicion_actual;
-        tiempo_sin_linea = millis();
-        return 1;
+    if (suma == 0) {
+        linea_perdida = millis() - t_linea >= T_PERDIDA_MS;
+        return;
     }
 
-    if (detectados > 0) {
-        posicion_actual = suma_p / suma;
-        ultima_posicion = posicion_actual;
-        tiempo_sin_linea = millis();
-        return 1;
+    t_linea = millis();
+    linea_perdida = false;
+    if (suma > MAX_ACTIVOS) return;
+
+    pos_filtrada = FILTRO_POS * (sumap / suma) + (1 - FILTRO_POS) * pos_filtrada;
+}
+
+void recuperarLinea(void)
+{
+    if (pos_filtrada > SETPOINT) {
+        moverRobot(-VEL_RECUPERACION, VEL_RECUPERACION);
+        return;
+    }
+    moverRobot(VEL_RECUPERACION, -VEL_RECUPERACION);
+}
+
+static int calcularBaseDinamica(float error_abs)
+{
+    error_abs = limitar_f(error_abs, 0, ERROR_CURVA);
+    int base = escalar(error_abs, 0, ERROR_CURVA, VEL_RECTA, VEL_CURVA);
+
+    float deriv_abs = fabsf(derivada_filtrada);
+    if (deriv_abs > 8) {
+        float factor_error = limitar_f(error_abs / 300, 0, 1);
+        int freno_extra = escalar(deriv_abs, 8, 70, 0, 70) * factor_error;
+        if (deriv_abs > 15) freno_extra += escalar(deriv_abs, 15, 100, 0, 40);
+        base -= limitar(freno_extra, 0, 90);
     }
 
-    if (millis() - tiempo_sin_linea < T_PERDIDA_MS) {
-        posicion_actual = ultima_posicion;
-        return 1;
+    return limitar(base, VEL_CURVA, VEL_RECTA);
+}
+
+static void actualizarRampa(float error_abs)
+{
+    int rampa_bajada = RAMPA_BAJADA;
+    if (error_abs > 100) rampa_bajada = RAMPA_BAJADA_MEDIA;
+    if (error_abs > 200) rampa_bajada = RAMPA_BAJADA_FUERTE;
+
+    int objetivo = calcularBaseDinamica(error_abs);
+    vel_base += limitar(objetivo - vel_base, -rampa_bajada, RAMPA_SUBIDA);
+}
+
+void controlPID(void)
+{
+    float proporcional = pos_filtrada - SETPOINT;
+    float error_abs = fabsf(proporcional);
+
+    if (error_abs < ZONA_MUERTA) {
+        actualizarRampa(error_abs);
+        moverRobot(vel_base, vel_base);
+        last_prop = proporcional;
+        return;
     }
-    if (ultima_posicion > 0) {
-        moverRobot(VEL_BUSQUEDA, -VEL_BUSQUEDA);
-        return 0;
+
+    derivada_filtrada += FILTRO_D * ((proporcional - last_prop) - derivada_filtrada);
+    float derivativo = limitar_f(derivada_filtrada, -DERIVADA_MAX, DERIVADA_MAX);
+    int diferencial = limitar(KP * proporcional + KD * derivativo, -SALIDA_MAX, SALIDA_MAX);
+    last_prop = proporcional;
+
+    actualizarRampa(error_abs);
+
+    int vel_izq = vel_base - diferencial;
+    int vel_der = vel_base + diferencial;
+
+    int mayor = vel_izq;
+    if (vel_der > mayor) mayor = vel_der;
+    if (mayor > VEL_PWM_MAX) {
+        vel_izq -= mayor - VEL_PWM_MAX;
+        vel_der -= mayor - VEL_PWM_MAX;
     }
-    moverRobot(-VEL_BUSQUEDA, VEL_BUSQUEDA);
-    return 0;
+
+    if (millis() - t_go < T_BLOQUEO_REVERSA_MS) {
+        if (vel_izq < 0) vel_izq = 0;
+        if (vel_der < 0) vel_der = 0;
+    }
+
+    moverRobot(vel_izq, vel_der);
 }
 
 void probar_sensores(void)
@@ -312,7 +358,7 @@ void probar_sensores(void)
             printf("%5d", raw[i]);
         printf("  |  ");
         for (int i = 0; i < 16; i++)
-            printf("%d", raw[i] > 2048);
+            printf("%d", raw[i] > umbral[i]);
         printf("\n");
         vTaskDelay(pdMS_TO_TICKS(100));
     }
