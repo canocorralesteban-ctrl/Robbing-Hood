@@ -20,15 +20,15 @@
 #define VEL_PWM_MAX     (int)(255 / ESCALA_BATERIA)
 
 #define VEL_RECTA         220
-#define VEL_CURVA         190
+#define VEL_CURVA         150
 #define VEL_RECUPERACION  220
-#define KP                0.12f
+#define KP                0.15f
 #define KD                4.0f
 #define FILTRO_D          0.25f
 #define DERIVADA_MAX      180
-#define SALIDA_MAX        120
+#define SALIDA_MAX        160
 #define ZONA_MUERTA       25
-#define ERROR_CURVA       800
+#define ERROR_CURVA       400
 #define RAMPA_SUBIDA      3
 #define RAMPA_BAJADA      10
 #define RAMPA_BAJADA_MEDIA  17
