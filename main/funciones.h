@@ -17,43 +17,52 @@
 #define PIN_IR          10
 
 #define ESCALA_BATERIA  0.667f
-#define VEL_TOPE        180
+#define VEL_PWM_MAX     (int)(255 / ESCALA_BATERIA)
 
-#define VEL_MAXIMA      160
-#define VEL_MINIMA      110
-#define VEL_BUSQUEDA    80
-#define KP              0.265f
-#define KD              7.5f
-#define K_FRENO         0.065f
-#define LIMITE_BASE     45
-#define LIMITE_PEND     0.015f
-#define LIMITE_MAX      90
-#define UMBRAL_LINEA    500
-#define SENSOR_OMITIDO  10
-#define BIF_DETECTADOS  4
-#define BIF_HUECO       4
-#define T_PERDIDA_MS    150
+#define VEL_RECTA         220
+#define VEL_CURVA         150
+#define VEL_RECUPERACION  220
+#define KP                0.15f
+#define KD                4.0f
+#define FILTRO_D          0.25f
+#define DERIVADA_MAX      180
+#define SALIDA_MAX        160
+#define ZONA_MUERTA       25
+#define ERROR_CURVA       400
+#define RAMPA_SUBIDA      3
+#define RAMPA_BAJADA      10
+#define RAMPA_BAJADA_MEDIA  17
+#define RAMPA_BAJADA_FUERTE 22
+
+#define SETPOINT          750
+#define FILTRO_POS        0.88f
+#define MAX_ACTIVOS       12
+#define SENSOR_OMITIDO    10
+#define T_PERDIDA_MS      20
+#define T_BLOQUEO_RECUPERACION_MS 180
+#define T_BLOQUEO_REVERSA_MS      220
+
 #define VEL_CALIBRAR    60
 #define T_CALIBRAR_GIRO_MS 300
 #define T_CALIBRAR_EXTRA_MS 40
-#define TS_MS           2
+#define TS_MS           1
 
 #define TURBINA_APAGADA_US  1000
 #define TURBINA_US_MAX      2000
 #define TURBINA_US_ARRANQUE 1200
-#define TURBINA_US_RECTA    1500
-#define TURBINA_US_CURVA    1500
-#define TURBINA_ERROR_CURVA 3000.0f
-#define TURBINA_PASO_US     1.0f
-#define T_TURBINA_ARRANQUE_MS 1000
+#define TURBINA_US_POTENCIA 1700
+#define TURBINA_PASO_US     10
+#define T_TURBINA_PASO_MS   100
 
 #define IR_BOTON_MOTORES 0x45
 #define IR_BOTON_TURBINA 0x46
 #define IR_BOTON_CALIBRAR 0x47
 #define T_ANTIRREBOTE_MS 500
 
-extern float posicion_actual;
-extern uint32_t tiempo_sin_linea;
+extern bool calibrado;
+extern bool linea_perdida;
+extern uint32_t t_go;
+extern bool turbina_encendida;
 
 uint32_t millis(void);
 int limitar(int valor, int minimo, int maximo);
@@ -61,13 +70,18 @@ float limitar_f(float valor, float minimo, float maximo);
 
 void motores_init(void);
 void moverRobot(int vel_izq, int vel_der);
+void detenerMotores(void);
 
 void turbina_init(void);
 void turbina(uint16_t us);
+void turbina_encender(bool encender);
+void actualizar_turbina(void);
 
 void sensores_init(void);
 void calibrar_auto(void);
-int leerSensores(void);
+void lecturaLinea(void);
+void recuperarLinea(void);
+void controlPID(void);
 void probar_sensores(void);
 
 void ir_init(void);
